@@ -1,0 +1,22 @@
+ENTREGA ACTIVIDAD 5 — AULATRACK
+
+Archivos principales:
+- client/src/pages/Home.tsx — dashboard, formulario y CRUD cliente.
+- client/index.html — documento raíz y carga de jQuery.
+- client/src/index.css — estilos responsive.
+- drizzle/schema.ts — tablas users y aula_activities.
+- drizzle/0000_low_living_lightning.sql — migración aplicada.
+- server/db.ts — conexión y helpers CRUD.
+- server/routers.ts — procedimientos protegidos aulaTrack.
+- server/aulaTrack.test.ts — pruebas de autorización y validación.
+- Actividad5_AulaTrack.md — documentación y evidencias.
+- todo.md — trazabilidad del trabajo.
+
+Validaciones ejecutadas:
+- pnpm check: aprobado.
+- pnpm test: 2 archivos y 4 pruebas aprobadas.
+- pnpm build: Vite y servidor compilados.
+- Migración SQL: ejecutada con éxito.
+- Preview: dashboard AulaTrack renderizado con panel de sesión y ruta GET visible.
+
+Nota de validación: la captura de preview confirma la interfaz y la consulta inicial. La ejecución interactiva de crear, actualizar y eliminar requiere pulsar los controles con una sesión autenticada; las pruebas Vitest cubren autorización y validación de entrada del servidor.

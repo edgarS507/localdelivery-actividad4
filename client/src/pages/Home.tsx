@@ -1,87 +1,50 @@
-/**
- * ESTILO: Panel editorial de depuración. La experiencia de delivery ocupa el centro; la consola lateral hace visibles los eventos y estados para la evidencia académica.
- */
-import { useEffect, useState } from "react";
-import { MapPin, ShoppingBag, Search, SlidersHorizontal, Terminal, CheckCircle2, Clock3, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { startLogin } from "@/const";
+import { trpc } from "@/lib/trpc";
+import { BookOpen, CalendarDays, CheckCircle2, ChevronRight, LogIn, Plus, Terminal, Trash2 } from "lucide-react";
 
-declare global {
-  interface Window { jQuery?: any; $?: any; }
-}
-
-type Restaurant = { id: number; name: string; description: string; price: string; category: string; free: boolean; image: string };
+type Activity = { id: number; title: string; subject: string; status: "pending" | "in_progress" | "submitted"; dueDate?: string | null; notes?: string | null };
 type Log = { time: string; event: string; detail: string; tone?: "blue" | "green" | "amber" };
-
-const restaurants: Restaurant[] = [
-  { id: 1, name: "Pizzería Bella Vista", description: "Pizza a la leña, albahaca y masa artesanal.", price: "$15.00", category: "pizza", free: true, image: "/manus-storage/localdelivery-pizza_833cd05b.jpg" },
-  { id: 2, name: "Hamburguesas El Corral", description: "Hamburguesa premium y papas rústicas.", price: "$12.50", category: "hamburguesa", free: false, image: "/manus-storage/localdelivery-burger_6a03b869.jpg" },
-  { id: 3, name: "Verde Local", description: "Bowls frescos con ingredientes de temporada.", price: "$11.00", category: "saludable", free: true, image: "/manus-storage/localdelivery-salad_7b08a05a.jpg" },
+const demoActivities: Activity[] = [
+  { id: 1, title: "Maquetación semántica HTML5", subject: "Programación Web", status: "in_progress", dueDate: "2026-09-12", notes: "Completar etiquetas header, main, section y footer." },
+  { id: 2, title: "Prototipo interactivo", subject: "Diseño de Interfaces", status: "pending", dueDate: "2026-09-15", notes: "Documentar eventos DOM y navegación." },
+  { id: 3, title: "Modelo de persistencia", subject: "Ingeniería de Software", status: "submitted", dueDate: "2026-09-05", notes: "Evidencia entregada." },
 ];
-
 function now() { return new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
 
 export default function Home() {
-  const [query, setQuery] = useState("");
-  const [freeOnly, setFreeOnly] = useState(false);
-  const [cart, setCart] = useState<{ name: string; price: number }[]>([]);
-  const [gps, setGps] = useState("GPS: No activo");
+  const { user, loading, isAuthenticated, logout } = useAuth();
+  const activitiesQuery = trpc.aulaTrack.list.useQuery(undefined, { enabled: isAuthenticated });
+  const utils = trpc.useUtils();
+  const createMutation = trpc.aulaTrack.create.useMutation({ onSuccess: () => { utils.aulaTrack.list.invalidate(); addLog("POST 201", "Actividad persistida mediante sentencia preparada.", "green"); resetForm(); }, onError: (error) => addLog("POST 400", error.message, "amber") });
+  const updateMutation = trpc.aulaTrack.update.useMutation({ onSuccess: () => { utils.aulaTrack.list.invalidate(); addLog("PUT 200", "Estado actualizado y persistido.", "green"); }, onError: (error) => addLog("PUT 400", error.message, "amber") });
+  const removeMutation = trpc.aulaTrack.remove.useMutation({ onSuccess: () => { utils.aulaTrack.list.invalidate(); addLog("DELETE 200", "Registro eliminado con filtro por propietario.", "amber"); }, onError: (error) => addLog("DELETE 400", error.message, "amber") });
+  const [form, setForm] = useState({ title: "", subject: "", dueDate: "", notes: "" });
   const [logs, setLogs] = useState<Log[]>([
-    { time: now(), event: "DOMContentLoaded", detail: "Sistema interactivo inicializado de forma segura.", tone: "blue" },
-    { time: now(), event: "DEBUG ESTADO", detail: '{ carrito: [], ubicacionGPS: null }', tone: "green" },
+    { time: now(), event: "SERVER READY", detail: "AulaTrack conectado a la capa de persistencia.", tone: "blue" },
+    { time: now(), event: "AUTH SESSION", detail: isAuthenticated ? "Sesión activa y rutas protegidas disponibles." : "Modo demo: inicia sesión para guardar cambios.", tone: isAuthenticated ? "green" : "amber" },
   ]);
-  const [activeView, setActiveView] = useState("Inicio");
+  const [activeView, setActiveView] = useState("Resumen");
+  const activities = (isAuthenticated ? (activitiesQuery.data ?? []) : demoActivities) as Activity[];
+  const stats = useMemo(() => ({ total: activities.length, progress: activities.filter((x) => x.status === "in_progress").length, submitted: activities.filter((x) => x.status === "submitted").length }), [activities]);
+  function addLog(event: string, detail: string, tone: Log["tone"] = "blue") { setLogs((old) => [{ time: now(), event, detail, tone }, ...old].slice(0, 8)); }
+  function resetForm() { setForm({ title: "", subject: "", dueDate: "", notes: "" }); }
+  function submitForm(event: React.FormEvent) { event.preventDefault(); addLog("POST", "Formulario recibido: validando title, subject y dueDate.", "blue"); if (!isAuthenticated) { addLog("AUTH 401", "Inicia sesión para persistir actividades.", "amber"); return; } createMutation.mutate({ ...form, status: "pending" }); }
+  function changeStatus(activity: Activity) { if (!isAuthenticated) { addLog("AUTH 401", "La actualización requiere una sesión activa.", "amber"); return; } const next = activity.status === "pending" ? "in_progress" : activity.status === "in_progress" ? "submitted" : "pending"; updateMutation.mutate({ id: activity.id, data: { status: next } }); }
+  useEffect(() => { addLog("GET 200", "Listado de actividades cargado en el cliente.", "green"); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [isAuthenticated]);
 
-  const addLog = (event: string, detail: string, tone: Log["tone"] = "blue") => setLogs((old) => [{ time: now(), event, detail, tone }, ...old].slice(0, 8));
-  const filtered = restaurants.filter((restaurant) => {
-    const matches = `${restaurant.name} ${restaurant.category}`.toLowerCase().includes(query.toLowerCase());
-    return matches && (!freeOnly || restaurant.free);
-  });
-  const total = cart.reduce((sum, item) => sum + item.price, 0);
-
-  useEffect(() => {
-    const $ = window.jQuery || window.$;
-    if (!$) return;
-    $(".js-evidence-card").each(function (this: HTMLElement) { $(this).attr("data-jquery-ready", "true"); });
-    addLog("jQuery READY", "Selectores .js-evidence-card preparados.", "green");
-    const onScroll = () => { if (window.scrollY > 40) addLog("scroll", "Resumen flotante fijado por desplazamiento.", "amber"); };
-    $(window).on("scroll.localdelivery", onScroll);
-    return () => $(window).off("scroll.localdelivery", onScroll);
-    // La dependencia vacía representa el evento ready de la demo.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleSearch = (value: string) => { setQuery(value); addLog("input", `Query: "${value || "(vacía)"}" · filtrado en caliente.`, "blue"); };
-  const handleFree = (checked: boolean) => { setFreeOnly(checked); addLog("change", `Solo envío gratis: ${checked ? "true" : "false"}.`, "amber"); };
-  const handleAdd = (restaurant: Restaurant) => {
-    const next = [...cart, { name: restaurant.name, price: Number(restaurant.price.replace("$", "")) }];
-    setCart(next); addLog("click", `[Carrito] Producto agregado: ${restaurant.name} · total $${next.reduce((s, x) => s + x.price, 0).toFixed(2)}`, "green");
-  };
-  const handleGPS = () => {
-    setGps("Localizando..."); addLog("click", "navigator.geolocation.getCurrentPosition() invocado.", "blue");
-    if (!navigator.geolocation) { setGps("GPS no soportado"); addLog("GPS ERROR", "El navegador no soporta la API.", "amber"); return; }
-    navigator.geolocation.getCurrentPosition((position) => {
-      const location = `${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`;
-      setGps(`GPS Activo: ${location}`); addLog("GPS SUCCESS", `Ubicación capturada: ${location}`, "green");
-    }, () => { setGps("GPS no disponible"); addLog("GPS ERROR", "Permiso no concedido o ubicación no disponible.", "amber"); });
-  };
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand-lockup"><div className="brand-mark"><span /></div><div><div className="eyebrow">LOCAL / DELIVERY</div><h1>LocalDelivery</h1></div></div>
-        <div className="top-actions"><div className="gps-status"><MapPin size={15} /><span>{gps}</span></div><button className="profile-button">Edgar A. <span>EA</span></button></div>
-      </header>
-      <div className="workspace">
-        <nav className="sidebar" aria-label="Navegación principal"><div className="nav-label">NAVEGACIÓN</div>{["Inicio", "Comercios", "Pedidos", "Soporte"].map((item) => <button key={item} onClick={() => { setActiveView(item); addLog("click", `Vista activa: ${item}.`, "blue"); }} className={activeView === item ? "nav-item active" : "nav-item"}>{item}<ChevronRight size={15} /></button>)}<div className="sidebar-note"><div className="mini-label">ACTIVIDAD 4</div><p>Programación del lado del cliente</p><span>JavaScript + jQuery</span></div></nav>
-        <main className="content"><div className="content-heading"><div><div className="eyebrow">PROYECTO INTEGRADOR / EVIDENCIA FUNCIONAL</div><h2>Pide cerca, decide rápido.</h2><p>Prueba las interacciones del cliente y observa sus trazas en tiempo real.</p></div><div className="date-chip">29 AGO 2026 <span>•</span> DEMO</div></div>
-          <section className="control-strip"><div className="search-control"><Search size={18} /><input value={query} onChange={(e) => handleSearch(e.target.value)} placeholder="Buscar comercio o categoría..." aria-label="Buscar comercio" /></div><label className="check-control"><input type="checkbox" checked={freeOnly} onChange={(e) => handleFree(e.target.checked)} /><span>Solo envío gratis</span></label><button className="outline-button" onClick={() => { setQuery(""); setFreeOnly(false); addLog("click", "Filtros restablecidos.", "amber"); }}><SlidersHorizontal size={16} /> Limpiar</button></section>
-          <div className="event-rail"><div><span className="event-number">01</span><strong>acción</strong><span>usuario escribe o pulsa</span></div><ChevronRight size={15} /><div><span className="event-number">02</span><strong>evento</strong><span>jQuery captura la interacción</span></div><ChevronRight size={15} /><div><span className="event-number">03</span><strong>resultado</strong><span>DOM y consola se actualizan</span></div></div><section className="section-header"><div><div className="section-kicker">SECCIÓN / COMERCIOS <span className="event-tag">EVENT: RENDER</span></div><h3>Restaurantes disponibles</h3></div><span className="result-count">{filtered.length} resultados</span></section>
-          <div className="restaurant-grid">{filtered.map((restaurant) => <article className="restaurant-card js-evidence-card" key={restaurant.id}><img src={restaurant.image} alt={restaurant.name} /><div className="card-content"><div className="card-meta"><span>{restaurant.free ? "ENVÍO GRATIS" : "ENVÍO $2.50"}</span><Clock3 size={13} /> 25–35 min <em>click → add</em></div><h4>{restaurant.name}</h4><p>{restaurant.description}</p><div className="card-bottom"><strong>{restaurant.price}</strong><button className="add-button" onClick={() => handleAdd(restaurant)}>Añadir <ShoppingBag size={15} /></button></div></div></article>)}</div>
-          {filtered.length === 0 && <div className="empty-state">No hay comercios que coincidan. Prueba con “pizza” o limpia los filtros.</div>}
-          <section className="cart-summary"><div><div className="section-kicker">ESTADO LOCAL / CARRITO</div><h3>{cart.length ? `${cart.length} producto${cart.length > 1 ? "s" : ""} listo${cart.length > 1 ? "s" : ""}` : "Tu carrito está vacío"}</h3></div><div className="cart-total">${total.toFixed(2)} <button onClick={() => addLog("click", cart.length ? "Confirmar pedido ejecutado." : "Checkout bloqueado: carrito vacío.", cart.length ? "green" : "amber")}>Confirmar pedido</button></div></section>
-        </main>
-        <aside className="evidence-panel"><div className="evidence-heading"><div><div className="eyebrow">DEVTOOLS / LIVE</div><h3><Terminal size={17} /> Evidencias</h3></div><span className="live-dot">LIVE</span></div><div className="evidence-card"><div className="evidence-card-title"><span>ESTADO GLOBAL</span><CheckCircle2 size={16} /></div><div className="state-row"><span>carrito</span><strong>{cart.length} items</strong></div><div className="state-row"><span>total</span><strong>${total.toFixed(2)}</strong></div><div className="state-row"><span>preferencias</span><strong>{freeOnly ? "envío gratis" : "todas"}</strong></div></div><div className="console-title"><span>CONSOLE.LOG / TRAZAS</span><button onClick={() => setLogs([])}>limpiar</button></div><div className="console">{logs.map((log, index) => <div className={`log-entry ${log.tone || ""}`} key={`${log.time}-${index}`}><div><span className="log-time">{log.time}</span><strong>{log.event}</strong></div><p>{log.detail}</p></div>)}{logs.length === 0 && <div className="console-empty">Sin trazas. Interactúa con la interfaz.</div>}</div><div className="event-legend"><div className="mini-label">EVENTOS IMPLEMENTADOS</div><div className="legend-grid"><span>click</span><span>input</span><span>change</span><span>scroll</span><span>GPS API</span><span>ready</span></div></div></aside>
-      </div>
-      <footer className="footer"><span>© 2026 LocalDelivery</span><span>Actividad 4 · Programación del lado del cliente y jQuery</span><span>HTML5 / DOM / jQuery 3.6</span></footer>
-    </div>
-  );
+  return <div className="app-shell">
+    <header className="topbar"><div className="brand-lockup"><div className="brand-mark"><span /></div><div><div className="eyebrow">AULA / TRACK</div><h1>AulaTrack</h1></div></div><div className="top-actions"><div className="gps-status"><BookOpen size={15} /><span>{user ? `Sesión: ${user.name || user.email || "estudiante"}` : "Modo demostración"}</span></div>{isAuthenticated ? <button className="profile-button" onClick={() => logout()}>Cerrar sesión <span>×</span></button> : <button className="profile-button" onClick={() => startLogin()}><LogIn size={14} /> Iniciar sesión</button>}</div></header>
+    <div className="workspace"><nav className="sidebar" aria-label="Navegación principal"><div className="nav-label">NAVEGACIÓN</div>{["Resumen", "Actividades", "Calendario", "Evidencias"].map((item) => <button key={item} onClick={() => { setActiveView(item); addLog("NAV", `Vista activa: ${item}.`, "blue"); }} className={activeView === item ? "nav-item active" : "nav-item"}>{item}<ChevronRight size={15} /></button>)}<div className="sidebar-note"><div className="mini-label">ACTIVIDAD 5</div><p>Persistencia y procesamiento backend</p><span>tRPC + MySQL + Sesiones</span></div></nav>
+      <main className="content"><div className="content-heading"><div><div className="eyebrow">PROYECTO FINAL / PANEL ACADÉMICO</div><h2>Tu progreso, persistido.</h2><p>Administra tus actividades y verifica cada operación del servidor.</p></div><div className="date-chip">5 SEP 2026 <span>•</span> HITO 3</div></div>
+        <section className="stats-grid"><div className="stat-card"><span>ACTIVIDADES</span><strong>{stats.total}</strong><small>GET /aulaTrack.list</small></div><div className="stat-card amber"><span>EN PROGRESO</span><strong>{stats.progress}</strong><small>estado in_progress</small></div><div className="stat-card green"><span>ENTREGADAS</span><strong>{stats.submitted}</strong><small>estado submitted</small></div></section>
+        <section className="form-card"><div className="section-header"><div><div className="section-kicker">FORMULARIO / POST <span className="event-tag">SANITIZADO</span></div><h3>Nueva actividad</h3></div><span className="method-badge">POST · JSON</span></div><form onSubmit={submitForm} className="activity-form"><input required minLength={3} maxLength={160} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Título de la actividad" aria-label="Título" /><input required minLength={2} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="Asignatura" aria-label="Asignatura" /><input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} aria-label="Fecha de entrega" /><button className="add-button" type="submit" disabled={createMutation.isPending}><Plus size={15} /> {createMutation.isPending ? "Guardando..." : "Guardar actividad"}</button></form><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Nota opcional (se valida en servidor)" aria-label="Notas" /></section>
+        <section className="section-header activity-heading"><div><div className="section-kicker">CRUD / ACTIVIDADES <span className="event-tag">OWNER FILTER</span></div><h3>Mis actividades</h3></div><span className="result-count">{isAuthenticated ? "Base de datos" : "Datos de ejemplo"}</span></section>
+        {isAuthenticated && activitiesQuery.isLoading && <div className="empty-state">Consultando actividades en la base de datos...</div>}{isAuthenticated && activitiesQuery.isError && <div className="error-state">No se pudo cargar el listado: {activitiesQuery.error.message}</div>}{!activitiesQuery.isLoading && !activitiesQuery.isError && activities.length === 0 && <div className="empty-state">No tienes actividades persistidas todavía. Usa el formulario para crear la primera.</div>}{!activitiesQuery.isLoading && !activitiesQuery.isError && activities.length > 0 && <div className="activity-list">{activities.map((activity) => <article className="activity-row js-evidence-card" key={activity.id}><div className="activity-icon"><CalendarDays size={18} /></div><div className="activity-info"><h4>{activity.title}</h4><p>{activity.subject} · {activity.dueDate || "sin fecha"}</p></div><button disabled={updateMutation.isPending} className={`status-pill ${activity.status}`} onClick={() => changeStatus(activity)}>{updateMutation.isPending ? "Guardando..." : activity.status === "pending" ? "Pendiente" : activity.status === "in_progress" ? "En progreso" : "Entregada"}</button>{isAuthenticated && <button disabled={removeMutation.isPending} className="delete-button" onClick={() => removeMutation.mutate({ id: activity.id })} aria-label={`Eliminar ${activity.title}`}><Trash2 size={15} /></button>}</article>)}</div>}
+        <section className="cart-summary"><div><div className="section-kicker">CAPA DE SEGURIDAD</div><h3>{isAuthenticated ? "Ruta protegida disponible" : "Vista de demostración"}</h3></div><div className="cart-total"><span>{isAuthenticated ? "SESSION: ACTIVE" : "SESSION: GUEST"}</span>{!isAuthenticated && <button onClick={() => startLogin()}>Autenticar</button>}</div></section>
+      </main>
+      <aside className="evidence-panel"><div className="evidence-heading"><div><div className="eyebrow">SERVER / LIVE</div><h3><Terminal size={17} /> Evidencias</h3></div><span className="live-dot">{isAuthenticated ? "AUTH" : "DEMO"}</span></div><div className="evidence-card"><div className="evidence-card-title"><span>RUTA ACTIVA</span><CheckCircle2 size={16} /></div><div className="state-row"><span>GET</span><strong>/api/trpc/aulaTrack.list</strong></div><div className="state-row"><span>POST</span><strong>/aulaTrack.create</strong></div><div className="state-row"><span>DB</span><strong>MySQL + prepared</strong></div></div><div className="console-title"><span>SERVER.LOG / TRAZAS</span><button onClick={() => setLogs([])}>limpiar</button></div><div className="console">{logs.map((log, index) => <div className={`log-entry ${log.tone || ""}`} key={`${log.time}-${index}`}><div><span className="log-time">{log.time}</span><strong>{log.event}</strong></div><p>{log.detail}</p></div>)}{logs.length === 0 && <div className="console-empty">Sin trazas. Ejecuta una operación.</div>}</div><div className="event-legend"><div className="mini-label">REQUISITOS CUBIERTOS</div><div className="legend-grid"><span>GET</span><span>POST</span><span>CRUD</span><span>PDO/PREP</span><span>SESSION</span><span>XSS SAFE</span></div></div></aside>
+    </div><footer className="footer"><span>© 2026 AulaTrack</span><span>Actividad 5 · Programación del lado del servidor</span><span>tRPC / Drizzle / MySQL</span></footer>
+  </div>;
 }
