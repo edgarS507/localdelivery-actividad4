@@ -90,7 +90,7 @@ La validación automática ejecutada antes de la entrega produjo los siguientes 
 | Migración SQL | Tablas `users` y `aula_activities` creadas |
 | Preview | Dashboard AulaTrack renderizado y sesión reconocida |
 
-Las pruebas Vitest cubren el rechazo de acceso sin sesión, la validación de payload inválido y la respuesta de listado para una sesión autenticada. El archivo está en `server/aulaTrack.test.ts`.
+Las pruebas Vitest cubren el rechazo de acceso sin sesión, la validación de payload inválido, el listado autenticado y el ciclo create-update-delete completo con el `ownerId` tomado del contexto del servidor. El archivo está en `server/aulaTrack.test.ts`. La sesión visual de la preview no pudo reutilizarse desde este entorno porque el conector del navegador del usuario no quedó habilitado; por eso no se presenta como evidencia autenticada una captura que no se haya ejecutado. La evidencia automatizada del servidor sí fue ejecutada: 5 pruebas aprobadas.
 
 ## 9. Archivos principales
 
@@ -106,7 +106,7 @@ Las pruebas Vitest cubren el rechazo de acceso sin sesión, la validación de pa
 
 ## 10. Procedimiento de demostración inicio a fin
 
-Primero se abre AulaTrack y se verifica que la sesión esté activa. Luego se registra una actividad con título, asignatura y fecha; el panel debe mostrar `POST 201`. Después se pulsa el estado para ejecutar una actualización y se comprueba `PUT 200`. Finalmente se elimina el registro y se verifica `DELETE 200`. Al recargar la página, la actividad debe conservarse mientras pertenezca a la sesión del usuario.
+Para una demostración manual, primero se abre AulaTrack y se verifica que la sesión esté activa. Luego se registra una actividad con título, asignatura y fecha; el panel debe mostrar `POST 201`. Después se pulsa el estado para ejecutar una actualización y se comprueba `PUT 200`. Finalmente se elimina el registro y se verifica `DELETE 200`. En esta ejecución se validó ese ciclo mediante pruebas tRPC aisladas, sin insertar datos en la base real, y se dejó preparada la preview para repetirlo cuando el conector del navegador esté habilitado.
 
 ## Referencias
 
